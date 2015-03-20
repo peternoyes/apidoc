@@ -1,5 +1,5 @@
-# http_apidoc
-http_apidoc is a simple tool which generate api documentation from source file,
+# apidoc
+apidoc is a simple tool which generate api documentation from source file,
 the documentation format is just like http.
 
 Currently, this tool only support output markdown format, you should use other tools to convert it to what you needed.
@@ -32,12 +32,12 @@ Note: Alighment is not a constraint, just for beautifuly.
 //     Authorization:base64(user:password)
 // @Resp
 //     400 BadRequest
-//  -> {"error":"authorized info can't be parsed"}
+//  -> {"error":"authorization info can't be parsed"}
 // @Resp
 //     401 Unauthorized
 //  -> {"error":"username or password was wrong"}
 // @RespIncl generateToken
-func BasicAuthMiddleware() {}
+func CreateAuthToken() {}
 
 // @API create a new account
 // @Req
