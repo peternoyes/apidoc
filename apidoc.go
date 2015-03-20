@@ -96,32 +96,33 @@ var as = APIs{}
 
 func exit(s string) {
 	fmt.Fprintln(os.Stderr, s)
+	os.Exit(-1)
 }
 
 var file string
 var comment string
 var ext string
-var format string
+var outputType string
 var overwrite bool
 var help bool
 
 func parseCLI() {
 	flag.StringVar(&file, "f", "", "save result to file")
-	flag.BoolVar(&overwrite, "o", false, "append result to file")
+	flag.BoolVar(&overwrite, "o", false, "overwrite exist file content")
 	flag.StringVar(&comment, "c", "//", "comment start")
 	flag.StringVar(&ext, "e", "go", "extension")
-	flag.StringVar(&format, "m", "md", "output format")
+	flag.StringVar(&outputType, "t", "md", "output format")
 	flag.BoolVar(&help, "h", false, "")
 	flag.Parse()
-}
-
-func main() {
-	parseCLI()
 	if help {
 		fmt.Println(os.Args[0] + " [OPTIONS] [FILE/DIR]")
 		flag.PrintDefaults()
 		os.Exit(0)
 	}
+}
+
+func main() {
+	parseCLI()
 	var path string
 	if l := len(os.Args); l == 0 {
 		path = "."
@@ -142,7 +143,7 @@ func main() {
 		exit(err.Error())
 	} else {
 		wg.Wait()
-		switch format {
+		switch outputType {
 		case "md":
 			if file != "" {
 				if err := sys.OpenOrCreateFor(file, overwrite, func(f *os.File) error {
@@ -155,7 +156,7 @@ func main() {
 				as.WriteMarkDown(os.Stdout)
 			}
 		default:
-			fmt.Fprintf(os.Stderr, "Sorry, currently don't support %s.\n", format)
+			fmt.Fprintf(os.Stderr, "Sorry, currently don't support %s.\n", outputType)
 		}
 	}
 }
