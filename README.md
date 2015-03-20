@@ -1,6 +1,5 @@
 # apidoc
-apidoc is a simple tool which generate api documentation from source file,
-the documentation format is just like http.
+apidoc is a simple tool which generate documentation from source code file for REST API, the documentation format is just like http.
 
 Currently, this tool only support output markdown format, you should use other tools to convert it to what you needed.
 
