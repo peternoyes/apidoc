@@ -4,6 +4,10 @@ the documentation format is just like http.
 
 Currently, this tool only support output markdown format, you should use other tools to convert it to what you needed.
 
+### Install
+`go get github.com/cosiner/apidoc`
+
+### Format
 All things here:
 * @API {description}             
   start a api section
@@ -19,8 +23,12 @@ All things here:
 * @Resp  
    define a response section
 * ->  
-   identify response body
+   identify request/response body
 
+### Usage
+The `-e` option specified file extension name,
+the '-c' option specified code comments start characters,
+with these two options, most language can be supported.
 
 # Examples
 Note: Alighment is not a constraint, just for beautifuly.
@@ -87,5 +95,4 @@ $ ./apidoc -e md README.md
       {"token":"1234567890"}  
     * 500 ServerError
 </pre>
-
 
