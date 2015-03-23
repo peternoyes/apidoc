@@ -10,9 +10,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/cosiner/golib/types"
+	"github.com/cosiner/gohper/lib/types"
 
-	"github.com/cosiner/golib/sys"
+	"github.com/cosiner/gohper/lib/sys"
 )
 
 type section struct {
