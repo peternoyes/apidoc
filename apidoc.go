@@ -29,15 +29,18 @@ type APIs struct {
 
 type API struct {
 	name  string
-	desc  string
+	desc  []string
 	reqs  []*section
 	resps []*section
 	subs  []string
 }
 
 func (a *API) WriteMarkdown(w io.Writer, index int, sub map[string]*API) {
-	if index != -1 {
-		fmt.Fprintf(w, "### %d. %s\n", index+1, a.desc)
+	if index != -1 && len(a.desc) != 0 {
+		fmt.Fprintf(w, "### %d. %s\n", index+1, a.desc[0])
+		for _, d := range a.desc[1:] {
+			fmt.Fprintf(w, "%s  \n", d)
+		}
 	}
 	writeSection(w, index, "Request", a.reqs)
 	writeSection(w, index, "Response", a.resps)
@@ -164,6 +167,13 @@ func main() {
 const (
 	PARSE_INIT = iota
 	PARSE_API
+	PARSE_REQ
+	PARSE_RESP
+
+	PARSE_STATUS
+	PARSE_HEADER
+	PARSE_DATA
+
 	DEF_API         = "@API"
 	DEF_SUBRESP     = "@SubResp"
 	DEF_RESPINCLUDE = "@RespIncl"
@@ -174,27 +184,26 @@ const (
 )
 
 func process(path string, wg *sync.WaitGroup) {
-	state := PARSE_INIT
-	firstLine := true
+	sectionState := PARSE_INIT
+	dataState := PARSE_INIT
 	var a *API
 	var name string
-	var req *section
-	var resp *section
+	var curr *section
 	if err := sys.FilterFileContent(path, false, func(linum int, line []byte) ([]byte, error) {
-		for i := range line {
-			if line[i] != ' ' {
-				line = line[i:]
-				break
-			}
-		}
+		line = bytes.TrimSpace(line)
 		if !StartWith(String(line), comment) {
-			state = PARSE_INIT
+			sectionState = PARSE_INIT
 			return nil, nil
 		}
-		linestr := string(bytes.TrimSpace(line[len(comment):]))
-		if len(linestr) == 0 {
+		line = bytes.TrimSpace(line[len(comment):])
+		index := bytes.Index(line, Bytes(comment))
+		if index > 0 {
+			line = bytes.TrimSpace(line[:index])
+		}
+		if len(line) == 0 {
 			return nil, nil
 		}
+		linestr := string(line)
 		switch {
 		case StartWith(linestr, DEF_RESPINCLUDE):
 			if a != nil {
@@ -204,50 +213,53 @@ func process(path string, wg *sync.WaitGroup) {
 			name = Trim(linestr[len(DEF_SUBRESP):])
 			fallthrough
 		case StartWith(linestr, DEF_API):
-			state = PARSE_API
+			sectionState = PARSE_API
 			a = &API{}
 			if name == "" {
-				a.desc = Trim(linestr[len(DEF_API):])
+				if desc := Trim(linestr[len(DEF_API):]); desc != "" {
+					a.desc = append(a.desc, desc)
+				}
 				as.Add(a)
 			} else {
 				as.AddSub(name, a)
 			}
 		case StartWith(linestr, DEF_REQ):
-			if state != PARSE_INIT {
-				req = &section{}
-				a.reqs = append(a.reqs, req)
-				firstLine = true
+			if sectionState != PARSE_INIT {
+				sectionState = PARSE_REQ
+				curr = &section{}
+				a.reqs = append(a.reqs, curr)
+				dataState = PARSE_STATUS
 			}
 		case StartWith(linestr, DEF_RESP):
-			if state != PARSE_INIT {
-				req = nil
-				firstLine = true
-				resp = &section{}
-				a.resps = append(a.resps, resp)
-			}
-		case StartWith(linestr, DEF_DATA):
-			if state != PARSE_INIT {
-				if req != nil {
-					req.datas = append(req.datas, Trim(linestr[len(DEF_DATA):]))
-				} else if resp != nil {
-					resp.datas = append(resp.datas, Trim(linestr[len(DEF_DATA):]))
-				}
+			if sectionState != PARSE_INIT {
+				sectionState = PARSE_RESP
+				dataState = PARSE_STATUS
+				curr = &section{}
+				a.resps = append(a.resps, curr)
 			}
 		case StartWith(linestr, DEF_ENDAPI):
-			state = PARSE_INIT
+			sectionState = PARSE_INIT
 		default:
-			if state == PARSE_INIT {
-			} else if firstLine {
-				firstLine = false
-				if req != nil {
-					req.headerLine = linestr
-				} else if resp != nil {
-					resp.headerLine = linestr
-				}
-			} else if req != nil {
-				req.headers = append(req.headers, linestr)
+			if sectionState == PARSE_INIT {
+			} else if sectionState == PARSE_API {
+				a.desc = append(a.desc, linestr)
 			} else {
-				resp.headers = append(resp.headers, linestr)
+				switch dataState {
+				case PARSE_STATUS:
+					curr.headerLine = linestr
+					dataState = PARSE_HEADER
+				case PARSE_HEADER:
+					if !StartWith(linestr, DEF_DATA) {
+						curr.headers = append(curr.headers, linestr)
+						break
+					}
+					dataState = PARSE_DATA
+					fallthrough
+				case PARSE_DATA:
+					if StartWith(linestr, DEF_DATA) {
+						curr.datas = append(curr.datas, Trim(linestr[len(DEF_DATA):]))
+					}
+				}
 			}
 		}
 		return nil, nil
