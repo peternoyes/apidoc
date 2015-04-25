@@ -1,4 +1,4 @@
-# apidoc
+# apidoc [![wercker status](https://app.wercker.com/status/0adb8589aef3c6eb84a15be7a3ad08e8/s "wercker status")](https://app.wercker.com/project/bykey/0adb8589aef3c6eb84a15be7a3ad08e8)
 apidoc is a simple tool which generate documentation from source code file for REST API, the documentation format is just like http.
 
 Currently, this tool only support output markdown format, you should use other tools to convert it to what you needed.
