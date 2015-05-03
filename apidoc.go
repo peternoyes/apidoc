@@ -10,9 +10,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/cosiner/gohper/lib/types"
-
-	"github.com/cosiner/gohper/lib/sys"
+	"github.com/cosiner/gohper/defval"
+	"github.com/cosiner/gohper/errors"
+	"github.com/cosiner/gohper/os2/file"
+	"github.com/cosiner/gohper/unsafe2"
 )
 
 type section struct {
@@ -90,7 +91,7 @@ func (as *APIs) AddSub(name string, a *API) {
 	as.Unlock()
 }
 
-var file string
+var fname string
 var comment string
 var ext string
 var outputType string
@@ -101,7 +102,7 @@ func parseCLI() {
 		fmt.Println(os.Args[0] + " [OPTIONS] [FILE/DIR]")
 		flag.PrintDefaults()
 	}
-	flag.StringVar(&file, "f", "", "save result to file")
+	flag.StringVar(&fname, "f", "", "save result to file")
 	flag.BoolVar(&overwrite, "o", false, "overwrite exist file content")
 	flag.StringVar(&comment, "c", "//", "comment start")
 	flag.StringVar(&ext, "e", "go", "file extension name")
@@ -109,8 +110,8 @@ func parseCLI() {
 	flag.Parse()
 }
 
-var String = types.UnsafeString
-var Bytes = types.UnsafeBytes
+var String = unsafe2.String
+var Bytes = unsafe2.Bytes
 var Trim = strings.TrimSpace
 var StartWith = strings.HasPrefix
 
@@ -118,47 +119,39 @@ var as = APIs{}
 
 func main() {
 	parseCLI()
-	var path string
 	args := flag.Args()
-	if len(args) == 0 {
-		path = "."
-	} else {
-		path = args[0]
-	}
+	path := defval.Cond(len(args) == 0).String(".", args[0])
 	ext = "." + ext
+
 	wg := sync.WaitGroup{}
-	if err := filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
-		if err == nil {
-			if !info.IsDir() && filepath.Ext(info.Name()) == ext {
-				wg.Add(1)
-				go process(path, &wg)
-			}
-		}
-		return err
-	}); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(-1)
-	} else {
-		wg.Wait()
-		if len(as.top) == 0 {
-			fmt.Println("No files contains api in this dir or file")
-			return
-		}
-		switch outputType {
-		case "md":
-			if file != "" {
-				if err := sys.OpenOrCreateFor(file, overwrite, func(f *os.File) error {
-					as.WriteMarkDown(f)
-					return nil
-				}); err != nil {
-					fmt.Fprintln(os.Stderr, err)
+	errors.Fatal(
+		filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
+			if err == nil {
+				if !info.IsDir() && filepath.Ext(info.Name()) == ext {
+					wg.Add(1)
+					go process(path, &wg)
 				}
-			} else {
-				as.WriteMarkDown(os.Stdout)
 			}
-		default:
-			fmt.Fprintln(os.Stderr, "Sorry, currently only support markdown format")
-		}
+			return err
+		}),
+	)
+
+	wg.Wait()
+
+	errors.CondDo(len(as.top) == 0,
+		errors.Err("No files contains api in this dir or file"),
+		errors.Fatal)
+	errors.CondDo(outputType != "md",
+		errors.Err("Sorry, currently only support markdown format"),
+		errors.Fatal)
+
+	if fname != "" {
+		fd, err := file.OpenOrCreate(fname, overwrite)
+		errors.Fatal(err)
+		as.WriteMarkDown(fd)
+		fd.Close()
+	} else {
+		as.WriteMarkDown(os.Stdout)
 	}
 }
 
@@ -187,7 +180,7 @@ func process(path string, wg *sync.WaitGroup) {
 	var a *API
 	var name string
 	var curr *section
-	if err := sys.FilterFileContent(path, false, func(linum int, line []byte) ([]byte, error) {
+	if err := file.Filter(path, false, func(linum int, line []byte) ([]byte, error) {
 		line = bytes.TrimSpace(line)
 		if !StartWith(String(line), comment) {
 			sectionState = PARSE_INIT
