@@ -146,10 +146,12 @@ func main() {
 		errors.Fatal)
 
 	if fname != "" {
-		fd, err := file.OpenOrCreate(fname, overwrite)
-		errors.Fatal(err)
-		as.WriteMarkDown(fd)
-		fd.Close()
+		errors.Fatal(
+			file.OpenOrCreate(fname, overwrite, func(fd *os.File) error {
+				as.WriteMarkDown(fd)
+				return nil
+			}),
+		)
 	} else {
 		as.WriteMarkDown(os.Stdout)
 	}
@@ -180,7 +182,7 @@ func process(path string, wg *sync.WaitGroup) {
 	var a *API
 	var name string
 	var curr *section
-	if err := file.Filter(path, false, func(linum int, line []byte) ([]byte, error) {
+	if err := file.Filter(path, func(linum int, line []byte) ([]byte, error) {
 		line = bytes.TrimSpace(line)
 		if !StartWith(String(line), comment) {
 			sectionState = PARSE_INIT
