@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/cosiner/gohper/defval"
 	"github.com/cosiner/gohper/errors"
 	"github.com/cosiner/gohper/os2/file"
 	"github.com/cosiner/gohper/unsafe2"
@@ -43,8 +42,10 @@ func (a *API) WriteMarkdown(w io.Writer, index int, sub map[string]*API) {
 			fmt.Fprintf(w, "%s  \n", d)
 		}
 	}
+
 	writeSection(w, index, "Request", a.reqs)
 	writeSection(w, index, "Response", a.resps)
+
 	for _, s := range a.subs {
 		if sa := sub[s]; sa != nil {
 			sa.WriteMarkdown(w, -1, sub)
@@ -53,18 +54,20 @@ func (a *API) WriteMarkdown(w io.Writer, index int, sub map[string]*API) {
 }
 
 func writeSection(w io.Writer, i int, name string, secs []*section) {
-	if len(secs) > 0 {
-		if i != -1 {
-			fmt.Fprintf(w, "* **%s**\n", name)
+	if len(secs) == 0 {
+		return
+	}
+
+	if i != -1 {
+		fmt.Fprintf(w, "* **%s**\n", name)
+	}
+	for _, sec := range secs {
+		fmt.Fprintf(w, "    * %s  \n", sec.headerLine)
+		for _, h := range sec.headers {
+			fmt.Fprintf(w, "      %s  \n", h)
 		}
-		for _, sec := range secs {
-			fmt.Fprintf(w, "    * %s  \n", sec.headerLine)
-			for _, h := range sec.headers {
-				fmt.Fprintf(w, "      %s  \n", h)
-			}
-			for _, d := range sec.datas {
-				fmt.Fprintf(w, "      %s  \n", d)
-			}
+		for _, d := range sec.datas {
+			fmt.Fprintf(w, "      %s  \n", d)
 		}
 	}
 }
@@ -97,7 +100,7 @@ var ext string
 var outputType string
 var overwrite bool
 
-func parseCLI() {
+func init() {
 	flag.Usage = func() {
 		fmt.Println(os.Args[0] + " [OPTIONS] [FILE/DIR]")
 		flag.PrintDefaults()
@@ -118,21 +121,27 @@ var StartWith = strings.HasPrefix
 var as = APIs{}
 
 func main() {
-	parseCLI()
 	args := flag.Args()
-	path := defval.Cond(len(args) == 0).String(".", args[0])
+
+	path := ""
+	if len(args) != 0 {
+		path = args[0]
+	}
 	ext = "." + ext
 
 	wg := sync.WaitGroup{}
 	errors.Fatal(
 		filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
-			if err == nil {
-				if !info.IsDir() && filepath.Ext(info.Name()) == ext {
-					wg.Add(1)
-					go process(path, &wg)
-				}
+			if err != nil {
+				return err
 			}
-			return err
+
+			if !info.IsDir() && filepath.Ext(info.Name()) == ext {
+				wg.Add(1)
+				go process(path, &wg)
+			}
+
+			return nil
 		}),
 	)
 
@@ -146,10 +155,11 @@ func main() {
 		errors.Fatal)
 
 	if fname != "" {
-		fd, err := file.OpenOrCreate(fname, overwrite)
-		errors.Fatal(err)
-		as.WriteMarkDown(fd)
-		fd.Close()
+		errors.Fatalln(file.OpenOrCreate(fname, overwrite, func(fd *os.File) error {
+			as.WriteMarkDown(fd)
+
+			return nil
+		}))
 	} else {
 		as.WriteMarkDown(os.Stdout)
 	}
@@ -180,12 +190,14 @@ func process(path string, wg *sync.WaitGroup) {
 	var a *API
 	var name string
 	var curr *section
-	if err := file.Filter(path, false, func(linum int, line []byte) ([]byte, error) {
+
+	err := file.Filter(path, func(linum int, line []byte) ([]byte, error) {
 		line = bytes.TrimSpace(line)
 		if !StartWith(String(line), comment) {
 			sectionState = PARSE_INIT
 			return nil, nil
 		}
+
 		line = bytes.TrimSpace(line[len(comment):])
 		index := bytes.Index(line, Bytes(comment))
 		if index > 0 {
@@ -194,15 +206,18 @@ func process(path string, wg *sync.WaitGroup) {
 		if len(line) == 0 {
 			return nil, nil
 		}
+
 		linestr := string(line)
 		switch {
 		case StartWith(linestr, DEF_RESPINCLUDE):
 			if a != nil {
 				a.subs = append(a.subs, Trim(linestr[len(DEF_RESPINCLUDE):]))
 			}
+
 		case StartWith(linestr, DEF_SUBRESP):
 			name = Trim(linestr[len(DEF_SUBRESP):])
 			fallthrough
+
 		case StartWith(linestr, DEF_API):
 			sectionState = PARSE_API
 			a = &API{}
@@ -214,6 +229,7 @@ func process(path string, wg *sync.WaitGroup) {
 			} else {
 				as.AddSub(name, a)
 			}
+
 		case StartWith(linestr, DEF_REQ):
 			if sectionState != PARSE_INIT {
 				sectionState = PARSE_REQ
@@ -221,6 +237,7 @@ func process(path string, wg *sync.WaitGroup) {
 				a.reqs = append(a.reqs, curr)
 				dataState = PARSE_STATUS
 			}
+
 		case StartWith(linestr, DEF_RESP):
 			if sectionState != PARSE_INIT {
 				sectionState = PARSE_RESP
@@ -228,34 +245,46 @@ func process(path string, wg *sync.WaitGroup) {
 				curr = &section{}
 				a.resps = append(a.resps, curr)
 			}
+
 		case StartWith(linestr, DEF_ENDAPI):
 			sectionState = PARSE_INIT
+
 		default:
 			if sectionState == PARSE_INIT {
+				break
 			} else if sectionState == PARSE_API {
 				a.desc = append(a.desc, linestr)
-			} else {
-				switch dataState {
-				case PARSE_STATUS:
-					curr.headerLine = linestr
-					dataState = PARSE_HEADER
-				case PARSE_HEADER:
-					if !StartWith(linestr, DEF_DATA) {
-						curr.headers = append(curr.headers, linestr)
-						break
-					}
-					dataState = PARSE_DATA
-					fallthrough
-				case PARSE_DATA:
-					if StartWith(linestr, DEF_DATA) {
-						curr.datas = append(curr.datas, Trim(linestr[len(DEF_DATA):]))
-					}
+
+				break
+			}
+
+			switch dataState {
+			case PARSE_STATUS:
+				curr.headerLine = linestr
+				dataState = PARSE_HEADER
+
+			case PARSE_HEADER:
+				if !StartWith(linestr, DEF_DATA) {
+					curr.headers = append(curr.headers, linestr)
+
+					break
+				}
+				dataState = PARSE_DATA
+
+				fallthrough
+
+			case PARSE_DATA:
+				if StartWith(linestr, DEF_DATA) {
+					curr.datas = append(curr.datas, Trim(linestr[len(DEF_DATA):]))
 				}
 			}
 		}
+
 		return nil, nil
-	}); err != nil {
+	})
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}
+
 	wg.Done()
 }
