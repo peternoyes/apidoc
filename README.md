@@ -8,62 +8,64 @@ Currently, this tool only support output markdown format, you should use other t
 
 ### Format
 All things here:
-* @Category {category name}   
+* `@Category` {category name}   
    category name for a file, default "global"
-* @API {name} @C {category}  
+* `@API` {name} @C {category}  
   start a api section, category is optional
-* @SubAPI {name}  
+* `@SubAPI` {name}  
    define a subapi, only allow response sections
-* @APIIncl {name1, name2, ...}  
+* `@APIIncl` {name1, name2, ...}    
    include one or more sub-apis
-* @SubResp {name}     
+* `@Header` {name}  
+    define common headers
+* `@HeaderIncl` {name1, name2, ...}  
+    include one or more headers
+* `@SubResp` {name}     
    define a subresponse section
-* @RespIncl {name1, name2, ...}    
+* `@RespIncl` {name1, name2, ...}    
    include one or more sub-response
-* @EndAPI     
+* `@EndAPI`     
    endup a api section, it's mainly used to seperate api documentation from 
    normal code comments, if no code comments, it's not needed  
-* @Req  
+* `@Req`  
    define a request section
-* @Resp  
+* `@Resp`  
    define a response section
-* ->  
+* `->``  
    identify request/response body
 
 ### Usage
 The `-e` option specified file extension name,
-the '-c' option specified code comments start characters,
-with these two options, most language can be supported.
+the `-c` option specified code comments start characters.
+With these two options, almost support all languages.
+
+The `-f` option specified file to save, default output to standard output.
 
 # Examples
 Note: Alighment is not a constraint, just for beautifuly.
 
-```Go
+```
 // @Category User
 
 // @API create token for authorized user @C Token
 //      only for authorized user
 // @Req
 //     POST /auth/token
-//     Authorization:base64(user:password)
-// @Resp
-//     400 BadRequest
-//  -> {"error":"authorization info can't be parsed"}
-// @Resp
-//     401 Unauthorized
-//  -> {"error":"username or password was wrong"}
+//     @HeaderIncl BasicAuth
+// @RespIncl UnAuth
 // @APIIncl generateToken
 func CreateAuthToken() {}
 
 // @API create a new account
 // @Req
 //     POST /account
-//   -> {"email":email, "password":password}
-// @Resp
-//     400 BadRequest
-//  -> {"error":"authorized info can't be parsed"}
+//   -> {email(string), password(string)}
+// @RespIncl UnAuth
 // @APIIncl generateToken
 func CreateAccount() {}
+
+// @Header BasicAuth
+//     Authorization:base64(user(string):password(string))
 
 // @SubAPI generateToken
 // @RespIncl TokenCreated, ServerError
@@ -71,6 +73,9 @@ func GenerateToken() {}
 
 // @SubResp ServerError
 //     500 ServerError
+// @SubResp UnAuth
+//     401 Unauthorized
+//   ->{error:"invalid access token"}
 // @SubResp TokenCreated
 //     201 Created
 //  -> {token(string)}
@@ -80,33 +85,30 @@ func GenerateToken() {}
 ```Sh
 $ ./apidoc -e md README.md
 ```
-<pre>
-### 1. Token
-#### 1. create token for authorized user
+
+
+#### 1. User
+##### 1. create a new account
+* **Request**
+    * POST /account  
+      {email(string), password(string)}  
+* **Response**
+    * 401 Unauthorized  
+      {error:"invalid access token"}  
+    * 201 Created  
+      {token(string)}  
+    * 500 ServerError  
+
+#### 2. Token
+##### 1. create token for authorized user
 only for authorized user  
 * **Request**
     * POST /auth/token  
-      Authorization:base64(user:password)  
+      Authorization:base64(user(string):password(string))  
 * **Response**
-    * 400 BadRequest  
-      {"error":"authorization info can't be parsed"}  
     * 401 Unauthorized  
-      {"error":"username or password was wrong"}  
+      {error:"invalid access token"}  
     * 201 Created  
       {token(string)}  
     * 500 ServerError  
-
-### 2. User
-#### 1. create a new account
-* **Request**
-    * POST /account  
-      {"email":email, "password":password}  
-* **Response**
-    * 400 BadRequest  
-      {"error":"authorized info can't be parsed"}  
-    * 201 Created  
-      {token(string)}  
-    * 500 ServerError  
-
-</pre>
 

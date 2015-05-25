@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,13 +19,8 @@ type section struct {
 	headerLine string
 	headers    []string
 	datas      []string
-}
 
-type APIs struct {
-	categories map[string][]*API
-	subresp    map[string]*section
-	subapi     map[string]*API
-	sync.Mutex
+	subheaders []string
 }
 
 type API struct {
@@ -39,63 +33,12 @@ type API struct {
 	subapis  []string
 }
 
-func (a *API) WriteMarkdown(w io.Writer, index int, as *APIs, writeSectionName bool) {
-	if index != -1 {
-		fmt.Fprintf(w, "#### %d. %s\n", index+1, a.name)
-	}
-
-	for _, d := range a.desc {
-		fmt.Fprintf(w, "%s  \n", d)
-	}
-	if a.req != nil && writeSectionName {
-		writeSection(w, true, "Request", a.req)
-	}
-
-	writeSection(w, writeSectionName, "Response", a.resps...)
-
-	for _, s := range a.subresps {
-		if sa := as.subresp[s]; sa != nil {
-			writeSection(w, writeSectionName && len(a.resps) == 0, "Response", sa)
-		}
-	}
-
-	for _, s := range a.subapis {
-		if sa := as.subapi[s]; sa != nil {
-			sa.WriteMarkdown(w, -1, as, false)
-		}
-	}
-}
-
-func writeSection(w io.Writer, writeSectionName bool, name string, secs ...*section) {
-	if len(secs) == 0 {
-		return
-	}
-	if writeSectionName {
-		fmt.Fprintf(w, "* **%s**\n", name)
-	}
-
-	for _, sec := range secs {
-		fmt.Fprintf(w, "    * %s  \n", sec.headerLine)
-		for _, h := range sec.headers {
-			fmt.Fprintf(w, "      %s  \n", h)
-		}
-		for _, d := range sec.datas {
-			fmt.Fprintf(w, "      %s  \n", d)
-		}
-	}
-}
-
-func (as *APIs) WriteMarkDown(w io.Writer) {
-	index := 1
-	for category, apis := range as.categories {
-		fmt.Fprintf(w, "### %d. %s\n", index, category)
-		index++
-
-		for i, a := range apis {
-			a.WriteMarkdown(w, i, as, true)
-			fmt.Fprintln(w)
-		}
-	}
+type APIs struct {
+	categories map[string][]*API
+	subresp    map[string]*section
+	subapi     map[string]*API
+	subheaders map[string]*section
+	sync.Mutex
 }
 
 func (as *APIs) AddAPI(category string, a *API) {
@@ -116,6 +59,19 @@ func (as *APIs) AddSubAPI(name string, a *API) {
 	as.Unlock()
 }
 
+func (as *APIs) AddSubHeader(name string, sec *section) {
+	as.Lock()
+	as.subheaders[name] = sec
+	as.Unlock()
+}
+
+var as = APIs{
+	subresp:    make(map[string]*section),
+	subapi:     make(map[string]*API),
+	categories: make(map[string][]*API),
+	subheaders: make(map[string]*section),
+}
+
 var fname string
 var comment string
 var ext string
@@ -133,12 +89,6 @@ func init() {
 	flag.StringVar(&ext, "e", "go", "file extension name")
 	flag.StringVar(&outputType, "t", "md", "output format, currently only support markdown")
 	flag.Parse()
-}
-
-var as = APIs{
-	subresp:    make(map[string]*section),
-	subapi:     make(map[string]*API),
-	categories: make(map[string][]*API),
 }
 
 func main() {
@@ -189,24 +139,30 @@ func main() {
 const (
 	PARSE_INIT = iota
 	PARSE_API
-	PARSE_REQ
-	PARSE_RESP
+	PARSE_BODY
 
 	PARSE_STATUS
 	PARSE_HEADER
 	PARSE_DATA
 
-	TAG_API         = "@API"
 	TAG_CATEGORY    = "@Category"
 	TAG_AT_CATEGORY = "@C"
-	TAG_SUBAPI      = "@SubAPI"
-	TAG_APIINCL     = "@APIIncl"
-	TAG_SUBRESP     = "@SubResp"
-	TAG_RESPINCL    = "@RespIncl"
-	TAG_RESP        = "@Resp"
-	TAG_REQ         = "@Req"
-	TAG_ENDAPI      = "@EndAPI"
-	TAG_DATA        = "->"
+
+	TAG_API    = "@API"
+	TAG_ENDAPI = "@EndAPI"
+
+	TAG_SUBAPI  = "@SubAPI"
+	TAG_APIINCL = "@APIIncl"
+
+	TAG_HEADER     = "@Header"
+	TAG_HEADERINCL = "@HeaderIncl"
+
+	TAG_SUBRESP  = "@SubResp"
+	TAG_RESPINCL = "@RespIncl"
+
+	TAG_RESP = "@Resp"
+	TAG_REQ  = "@Req"
+	TAG_DATA = "->"
 )
 
 func process(path string, wg *sync.WaitGroup) {
@@ -244,9 +200,14 @@ func process(path string, wg *sync.WaitGroup) {
 				a.subapis = append(a.subapis, strings2.TrimSplit(linestr[len(TAG_APIINCL):], ",")...)
 			}
 
+		case strings.HasPrefix(linestr, TAG_HEADERINCL):
+			if sec != nil {
+				sec.subheaders = append(sec.subheaders, strings2.TrimSplit(linestr[len(TAG_HEADERINCL):], ",")...)
+			}
+
 		case strings.HasPrefix(linestr, TAG_SUBRESP):
 			name := strings.TrimSpace(linestr[len(TAG_SUBRESP):])
-			sectionState = PARSE_RESP
+			sectionState = PARSE_BODY
 			dataState = PARSE_STATUS
 			sec = &section{}
 			as.AddSubResp(name, sec)
@@ -257,6 +218,12 @@ func process(path string, wg *sync.WaitGroup) {
 			a.name = strings.TrimSpace(linestr[len(TAG_SUBAPI):])
 
 			as.AddSubAPI(a.name, a)
+		case strings.HasPrefix(linestr, TAG_HEADER):
+			sec = &section{}
+			sectionState = PARSE_BODY
+			dataState = PARSE_HEADER
+
+			as.AddSubHeader(strings.TrimSpace(linestr[len(TAG_HEADER):]), sec)
 		case strings.HasPrefix(linestr, TAG_API):
 			a = &API{}
 			sectionState = PARSE_API
@@ -275,7 +242,7 @@ func process(path string, wg *sync.WaitGroup) {
 
 		case strings.HasPrefix(linestr, TAG_REQ):
 			if sectionState != PARSE_INIT {
-				sectionState = PARSE_REQ
+				sectionState = PARSE_BODY
 				sec = &section{}
 				a.req = sec
 				dataState = PARSE_STATUS
@@ -283,7 +250,7 @@ func process(path string, wg *sync.WaitGroup) {
 
 		case strings.HasPrefix(linestr, TAG_RESP):
 			if sectionState != PARSE_INIT {
-				sectionState = PARSE_RESP
+				sectionState = PARSE_BODY
 				dataState = PARSE_STATUS
 				sec = &section{}
 				a.resps = append(a.resps, sec)
