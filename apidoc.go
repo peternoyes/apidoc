@@ -280,7 +280,6 @@ func process(path string, wg *sync.WaitGroup) {
 					break
 				}
 				dataState = PARSE_DATA
-
 				fallthrough
 
 			case PARSE_DATA:

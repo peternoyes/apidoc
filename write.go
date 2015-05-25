@@ -3,48 +3,56 @@ package main
 import (
 	"fmt"
 	"io"
+
+	"github.com/cosiner/gohper/termcolor"
 )
 
 func (a *API) WriteMarkdown(w io.Writer, index int, as *APIs, writeSectionName bool) {
 	if index != -1 {
-		fmt.Fprintf(w, "##### %d. %s\n", index+1, a.name)
+		printfln(w, "##### %d. %s", index+1, a.name)
 	}
 
 	for _, d := range a.desc {
-		fmt.Fprintf(w, "%s  \n", d)
+		printfln(w, "%s  ", d)
 	}
 	if a.req != nil && writeSectionName {
-		writeSection(w, true, "Request", as, a.req)
+		as.writeSection(w, a.name, "Request", true, a.req)
 	}
 
-	writeSection(w, writeSectionName, "Response", as, a.resps...)
+	as.writeSection(w, a.name, "Response", writeSectionName, a.resps...)
 
 	for _, s := range a.subresps {
-		if sa := as.subresp[s]; sa != nil {
-			writeSection(w, writeSectionName && len(a.resps) == 0, "Response", as, sa)
+		if resp := as.subresp[s]; resp != nil {
+			as.writeSection(w, a.name, "Response", writeSectionName && len(a.resps) == 0, resp)
+		} else {
+			reportErrorln(`sub-response "%s" for api "%s" not found.`, s, a.name)
 		}
 	}
 
 	for _, s := range a.subapis {
-		if sa := as.subapi[s]; sa != nil {
-			sa.WriteMarkdown(w, -1, as, false)
+		if api := as.subapi[s]; api != nil {
+			api.WriteMarkdown(w, -1, as, false)
+		} else {
+			reportErrorln(`sub-api "%s" for api "%s" not found.`, s, a.name)
 		}
 	}
 }
 
-func writeSection(w io.Writer, writeSectionName bool, name string, as *APIs, secs ...*section) {
+func (as *APIs) writeSection(w io.Writer, apiname, secname string, writeSectionName bool, secs ...*section) {
 	if len(secs) == 0 {
 		return
 	}
 	if writeSectionName {
-		fmt.Fprintf(w, "* **%s**\n", name)
+		printfln(w, "* **%s**", secname)
 	}
 
 	for _, sec := range secs {
-		fmt.Fprintf(w, "    * %s  \n", sec.headerLine)
+		printfln(w, "    * %s  ", sec.headerLine)
 		for _, h := range sec.subheaders {
 			if sec := as.subheaders[h]; sec != nil {
 				writeBodyLines(w, sec.headers)
+			} else {
+				reportErrorln(`sub-header "%s" for api "%s" not found.`, apiname)
 			}
 		}
 
@@ -55,14 +63,14 @@ func writeSection(w io.Writer, writeSectionName bool, name string, as *APIs, sec
 
 func writeBodyLines(w io.Writer, headers []string) {
 	for _, h := range headers {
-		fmt.Fprintf(w, "      %s  \n", h)
+		printfln(w, "      %s  ", h)
 	}
 }
 
 func (as *APIs) WriteMarkDown(w io.Writer) {
 	index := 1
 	for category, apis := range as.categories {
-		fmt.Fprintf(w, "#### %d. %s\n", index, category)
+		printfln(w, "#### %d. %s", index, category)
 		index++
 
 		for i, a := range apis {
@@ -70,4 +78,12 @@ func (as *APIs) WriteMarkDown(w io.Writer) {
 			fmt.Fprintln(w)
 		}
 	}
+}
+
+func reportErrorln(format string, args ...interface{}) {
+	termcolor.LightRed.Fprintf(termcolor.Stderr, format+"\n", args...)
+}
+
+func printfln(w io.Writer, format string, args ...interface{}) {
+	fmt.Fprintf(w, format+"\n", args...)
 }
