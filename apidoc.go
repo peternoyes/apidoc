@@ -12,6 +12,7 @@ import (
 
 	"github.com/cosiner/gohper/errors"
 	"github.com/cosiner/gohper/os2/file"
+	"github.com/cosiner/gohper/strings2"
 	"github.com/cosiner/gohper/unsafe2"
 )
 
@@ -22,45 +23,57 @@ type section struct {
 }
 
 type APIs struct {
-	top []*API
-	sub map[string]*API
+	categories map[string][]*API
+	subresp    map[string]*section
+	subapi     map[string]*API
 	sync.Mutex
 }
 
 type API struct {
 	name  string
 	desc  []string
-	reqs  []*section
+	req   *section
 	resps []*section
-	subs  []string
+
+	subresps []string
+	subapis  []string
 }
 
-func (a *API) WriteMarkdown(w io.Writer, index int, sub map[string]*API) {
-	if index != -1 && len(a.desc) != 0 {
-		fmt.Fprintf(w, "### %d. %s\n", index+1, a.desc[0])
-		for _, d := range a.desc[1:] {
-			fmt.Fprintf(w, "%s  \n", d)
+func (a *API) WriteMarkdown(w io.Writer, index int, as *APIs, writeSectionName bool) {
+	if index != -1 {
+		fmt.Fprintf(w, "#### %d. %s\n", index+1, a.name)
+	}
+
+	for _, d := range a.desc {
+		fmt.Fprintf(w, "%s  \n", d)
+	}
+	if a.req != nil && writeSectionName {
+		writeSection(w, true, "Request", a.req)
+	}
+
+	writeSection(w, writeSectionName, "Response", a.resps...)
+
+	for _, s := range a.subresps {
+		if sa := as.subresp[s]; sa != nil {
+			writeSection(w, writeSectionName && len(a.resps) == 0, "Response", sa)
 		}
 	}
 
-	writeSection(w, index, "Request", a.reqs)
-	writeSection(w, index, "Response", a.resps)
-
-	for _, s := range a.subs {
-		if sa := sub[s]; sa != nil {
-			sa.WriteMarkdown(w, -1, sub)
+	for _, s := range a.subapis {
+		if sa := as.subapi[s]; sa != nil {
+			sa.WriteMarkdown(w, -1, as, false)
 		}
 	}
 }
 
-func writeSection(w io.Writer, i int, name string, secs []*section) {
+func writeSection(w io.Writer, writeSectionName bool, name string, secs ...*section) {
 	if len(secs) == 0 {
 		return
 	}
-
-	if i != -1 {
+	if writeSectionName {
 		fmt.Fprintf(w, "* **%s**\n", name)
 	}
+
 	for _, sec := range secs {
 		fmt.Fprintf(w, "    * %s  \n", sec.headerLine)
 		for _, h := range sec.headers {
@@ -73,24 +86,33 @@ func writeSection(w io.Writer, i int, name string, secs []*section) {
 }
 
 func (as *APIs) WriteMarkDown(w io.Writer) {
-	for i, a := range as.top {
-		a.WriteMarkdown(w, i, as.sub)
-		fmt.Fprintln(w)
+	index := 1
+	for category, apis := range as.categories {
+		fmt.Fprintf(w, "### %d. %s\n", index, category)
+		index++
+
+		for i, a := range apis {
+			a.WriteMarkdown(w, i, as, true)
+			fmt.Fprintln(w)
+		}
 	}
 }
 
-func (as *APIs) Add(a *API) {
+func (as *APIs) AddAPI(category string, a *API) {
 	as.Lock()
-	as.top = append(as.top, a)
+	as.categories[category] = append(as.categories[category], a)
 	as.Unlock()
 }
 
-func (as *APIs) AddSub(name string, a *API) {
+func (as *APIs) AddSubResp(name string, resp *section) {
 	as.Lock()
-	if as.sub == nil {
-		as.sub = make(map[string]*API)
-	}
-	as.sub[name] = a
+	as.subresp[name] = resp
+	as.Unlock()
+}
+
+func (as *APIs) AddSubAPI(name string, a *API) {
+	as.Lock()
+	as.subapi[name] = a
 	as.Unlock()
 }
 
@@ -113,17 +135,16 @@ func init() {
 	flag.Parse()
 }
 
-var String = unsafe2.String
-var Bytes = unsafe2.Bytes
-var Trim = strings.TrimSpace
-var StartWith = strings.HasPrefix
-
-var as = APIs{}
+var as = APIs{
+	subresp:    make(map[string]*section),
+	subapi:     make(map[string]*API),
+	categories: make(map[string][]*API),
+}
 
 func main() {
 	args := flag.Args()
 
-	path := ""
+	path := "."
 	if len(args) != 0 {
 		path = args[0]
 	}
@@ -147,12 +168,12 @@ func main() {
 
 	wg.Wait()
 
-	errors.CondDo(len(as.top) == 0,
+	errors.CondDo(len(as.categories) == 0,
 		errors.Err("No files contains api in this dir or file"),
-		errors.Fatal)
+		errors.FatalAnyln)
 	errors.CondDo(outputType != "md",
 		errors.Err("Sorry, currently only support markdown format"),
-		errors.Fatal)
+		errors.FatalAnyln)
 
 	if fname != "" {
 		errors.Fatalln(file.OpenOrCreate(fname, overwrite, func(fd *os.File) error {
@@ -175,31 +196,35 @@ const (
 	PARSE_HEADER
 	PARSE_DATA
 
-	DEF_API         = "@API"
-	DEF_SUBRESP     = "@SubResp"
-	DEF_RESPINCLUDE = "@RespIncl"
-	DEF_RESP        = "@Resp"
-	DEF_REQ         = "@Req"
-	DEF_ENDAPI      = "@EndAPI"
-	DEF_DATA        = "->"
+	TAG_API         = "@API"
+	TAG_CATEGORY    = "@Category"
+	TAG_AT_CATEGORY = "@C"
+	TAG_SUBAPI      = "@SubAPI"
+	TAG_APIINCL     = "@APIIncl"
+	TAG_SUBRESP     = "@SubResp"
+	TAG_RESPINCL    = "@RespIncl"
+	TAG_RESP        = "@Resp"
+	TAG_REQ         = "@Req"
+	TAG_ENDAPI      = "@EndAPI"
+	TAG_DATA        = "->"
 )
 
 func process(path string, wg *sync.WaitGroup) {
 	sectionState := PARSE_INIT
 	dataState := PARSE_INIT
 	var a *API
-	var name string
-	var curr *section
+	var sec *section
+	var category string = "global"
 
 	err := file.Filter(path, func(linum int, line []byte) ([]byte, error) {
 		line = bytes.TrimSpace(line)
-		if !StartWith(String(line), comment) {
+		if !strings.HasPrefix(unsafe2.String(line), comment) {
 			sectionState = PARSE_INIT
 			return nil, nil
 		}
 
 		line = bytes.TrimSpace(line[len(comment):])
-		index := bytes.Index(line, Bytes(comment))
+		index := bytes.Index(line, unsafe2.Bytes(comment))
 		if index > 0 {
 			line = bytes.TrimSpace(line[:index])
 		}
@@ -209,44 +234,62 @@ func process(path string, wg *sync.WaitGroup) {
 
 		linestr := string(line)
 		switch {
-		case StartWith(linestr, DEF_RESPINCLUDE):
+		case strings.HasPrefix(linestr, TAG_RESPINCL):
 			if a != nil {
-				a.subs = append(a.subs, Trim(linestr[len(DEF_RESPINCLUDE):]))
+				a.subresps = append(a.subresps, strings2.TrimSplit(linestr[len(TAG_RESPINCL):], ",")...)
 			}
 
-		case StartWith(linestr, DEF_SUBRESP):
-			name = Trim(linestr[len(DEF_SUBRESP):])
-			fallthrough
+		case strings.HasPrefix(linestr, TAG_APIINCL):
+			if a != nil {
+				a.subapis = append(a.subapis, strings2.TrimSplit(linestr[len(TAG_APIINCL):], ",")...)
+			}
 
-		case StartWith(linestr, DEF_API):
-			sectionState = PARSE_API
+		case strings.HasPrefix(linestr, TAG_SUBRESP):
+			name := strings.TrimSpace(linestr[len(TAG_SUBRESP):])
+			sectionState = PARSE_RESP
+			dataState = PARSE_STATUS
+			sec = &section{}
+			as.AddSubResp(name, sec)
+
+		case strings.HasPrefix(linestr, TAG_SUBAPI):
 			a = &API{}
-			if name == "" {
-				if desc := Trim(linestr[len(DEF_API):]); desc != "" {
-					a.desc = append(a.desc, desc)
-				}
-				as.Add(a)
+			sectionState = PARSE_API
+			a.name = strings.TrimSpace(linestr[len(TAG_SUBAPI):])
+
+			as.AddSubAPI(a.name, a)
+		case strings.HasPrefix(linestr, TAG_API):
+			a = &API{}
+			sectionState = PARSE_API
+			name := strings.TrimSpace(linestr[len(TAG_API):])
+			names := strings2.TrimSplit(name, TAG_AT_CATEGORY)
+			a.name = names[0]
+
+			if len(names) > 1 {
+				as.AddAPI(names[1], a)
 			} else {
-				as.AddSub(name, a)
+				as.AddAPI(category, a)
 			}
 
-		case StartWith(linestr, DEF_REQ):
+		case strings.HasPrefix(linestr, TAG_CATEGORY):
+			category = strings.TrimSpace(linestr[len(TAG_CATEGORY):])
+
+		case strings.HasPrefix(linestr, TAG_REQ):
 			if sectionState != PARSE_INIT {
 				sectionState = PARSE_REQ
-				curr = &section{}
-				a.reqs = append(a.reqs, curr)
+				sec = &section{}
+				a.req = sec
 				dataState = PARSE_STATUS
 			}
 
-		case StartWith(linestr, DEF_RESP):
+		case strings.HasPrefix(linestr, TAG_RESP):
 			if sectionState != PARSE_INIT {
 				sectionState = PARSE_RESP
 				dataState = PARSE_STATUS
-				curr = &section{}
-				a.resps = append(a.resps, curr)
+				sec = &section{}
+				a.resps = append(a.resps, sec)
 			}
 
-		case StartWith(linestr, DEF_ENDAPI):
+		case strings.HasPrefix(linestr, TAG_ENDAPI):
 			sectionState = PARSE_INIT
 
 		default:
@@ -260,12 +303,12 @@ func process(path string, wg *sync.WaitGroup) {
 
 			switch dataState {
 			case PARSE_STATUS:
-				curr.headerLine = linestr
+				sec.headerLine = linestr
 				dataState = PARSE_HEADER
 
 			case PARSE_HEADER:
-				if !StartWith(linestr, DEF_DATA) {
-					curr.headers = append(curr.headers, linestr)
+				if !strings.HasPrefix(linestr, TAG_DATA) {
+					sec.headers = append(sec.headers, linestr)
 
 					break
 				}
@@ -274,8 +317,8 @@ func process(path string, wg *sync.WaitGroup) {
 				fallthrough
 
 			case PARSE_DATA:
-				if StartWith(linestr, DEF_DATA) {
-					curr.datas = append(curr.datas, Trim(linestr[len(DEF_DATA):]))
+				if strings.HasPrefix(linestr, TAG_DATA) {
+					sec.datas = append(sec.datas, strings.TrimSpace(linestr[len(TAG_DATA):]))
 				}
 			}
 		}
