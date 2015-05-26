@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/cosiner/gohper/tree"
+
 	"github.com/cosiner/gohper/errors"
 	"github.com/cosiner/gohper/os2/file"
 	"github.com/cosiner/gohper/strings2"
@@ -136,6 +138,78 @@ func main() {
 	}
 }
 
+type Tag int
+
+func (t Tag) String() string {
+	switch t {
+	case TAG_CATEGORY:
+		return "@Category"
+	case TAG_API:
+		return "@API"
+	case TAG_ENDAPI:
+		return "@EndAPI"
+	case TAG_SUBAPI:
+		return "@SubAPI"
+	case TAG_APIINCL:
+		return "@APIIncl"
+	case TAG_HEADER:
+		return "@Header"
+	case TAG_HEADERINCL:
+		return "@HeaderIncl"
+	case TAG_SUBRESP:
+		return "@SubResp"
+	case TAG_RESPINCL:
+		return "@RespIncl"
+	case TAG_REQ:
+		return "@Req"
+	case TAG_RESP:
+		return "@Resp"
+	case TAG_DATA:
+		return "->"
+	}
+
+	panic("unexpected tag")
+}
+
+func (t Tag) Strlen() int {
+	return len(t.String())
+}
+
+const (
+	TAG_AT_CATEGORY = "@C"
+
+	TAG_CATEGORY Tag = iota + 1
+	TAG_API
+	TAG_ENDAPI
+	TAG_SUBAPI
+	TAG_APIINCL
+	TAG_HEADER
+	TAG_HEADERINCL
+	TAG_SUBRESP
+	TAG_RESPINCL
+	TAG_RESP
+	TAG_REQ
+
+	TAG_DATA
+)
+
+var tagTree tree.Trie
+
+func init() {
+	for t := TAG_CATEGORY; t < TAG_DATA; t++ {
+		tagTree.AddPath(t.String(), t)
+	}
+}
+
+func matchTag(line string) Tag {
+	val := tagTree.PrefixMatchValue(line)
+	if val == nil {
+		return 0
+	}
+
+	return val.(Tag)
+}
+
 const (
 	PARSE_INIT = iota
 	PARSE_API
@@ -144,25 +218,6 @@ const (
 	PARSE_STATUS
 	PARSE_HEADER
 	PARSE_DATA
-
-	TAG_CATEGORY    = "@Category"
-	TAG_AT_CATEGORY = "@C"
-
-	TAG_API    = "@API"
-	TAG_ENDAPI = "@EndAPI"
-
-	TAG_SUBAPI  = "@SubAPI"
-	TAG_APIINCL = "@APIIncl"
-
-	TAG_HEADER     = "@Header"
-	TAG_HEADERINCL = "@HeaderIncl"
-
-	TAG_SUBRESP  = "@SubResp"
-	TAG_RESPINCL = "@RespIncl"
-
-	TAG_RESP = "@Resp"
-	TAG_REQ  = "@Req"
-	TAG_DATA = "->"
 )
 
 func process(path string, wg *sync.WaitGroup) {
@@ -189,45 +244,14 @@ func process(path string, wg *sync.WaitGroup) {
 		}
 
 		linestr := string(line)
-		switch {
-		case strings.HasPrefix(linestr, TAG_RESPINCL):
-			if a != nil {
-				a.subresps = append(a.subresps, strings2.TrimSplit(linestr[len(TAG_RESPINCL):], ",")...)
-			}
+		switch tag := matchTag(linestr); tag {
+		case TAG_CATEGORY:
+			category = strings.TrimSpace(linestr[tag.Strlen():])
 
-		case strings.HasPrefix(linestr, TAG_APIINCL):
-			if a != nil {
-				a.subapis = append(a.subapis, strings2.TrimSplit(linestr[len(TAG_APIINCL):], ",")...)
-			}
-
-		case strings.HasPrefix(linestr, TAG_HEADERINCL):
-			if sec != nil {
-				sec.subheaders = append(sec.subheaders, strings2.TrimSplit(linestr[len(TAG_HEADERINCL):], ",")...)
-			}
-
-		case strings.HasPrefix(linestr, TAG_SUBRESP):
-			name := strings.TrimSpace(linestr[len(TAG_SUBRESP):])
-			sectionState = PARSE_BODY
-			dataState = PARSE_STATUS
-			sec = &section{}
-			as.AddSubResp(name, sec)
-
-		case strings.HasPrefix(linestr, TAG_SUBAPI):
+		case TAG_API:
 			a = &API{}
 			sectionState = PARSE_API
-			a.name = strings.TrimSpace(linestr[len(TAG_SUBAPI):])
-
-			as.AddSubAPI(a.name, a)
-		case strings.HasPrefix(linestr, TAG_HEADER):
-			sec = &section{}
-			sectionState = PARSE_BODY
-			dataState = PARSE_HEADER
-
-			as.AddSubHeader(strings.TrimSpace(linestr[len(TAG_HEADER):]), sec)
-		case strings.HasPrefix(linestr, TAG_API):
-			a = &API{}
-			sectionState = PARSE_API
-			name := strings.TrimSpace(linestr[len(TAG_API):])
+			name := strings.TrimSpace(linestr[tag.Strlen():])
 			names := strings2.TrimSplit(name, TAG_AT_CATEGORY)
 			a.name = names[0]
 
@@ -236,28 +260,55 @@ func process(path string, wg *sync.WaitGroup) {
 			} else {
 				as.AddAPI(category, a)
 			}
+		case TAG_SUBAPI:
+			a = &API{}
+			sectionState = PARSE_API
+			a.name = strings.TrimSpace(linestr[tag.Strlen():])
 
-		case strings.HasPrefix(linestr, TAG_CATEGORY):
-			category = strings.TrimSpace(linestr[len(TAG_CATEGORY):])
+			as.AddSubAPI(a.name, a)
+		case TAG_APIINCL:
+			if a != nil {
+				a.subapis = append(a.subapis, strings2.TrimSplit(linestr[tag.Strlen():], ",")...)
+			}
+		case TAG_ENDAPI:
+			sectionState = PARSE_INIT
 
-		case strings.HasPrefix(linestr, TAG_REQ):
-			if sectionState != PARSE_INIT {
-				sectionState = PARSE_BODY
-				sec = &section{}
-				a.req = sec
-				dataState = PARSE_STATUS
+		case TAG_HEADER:
+			sec = &section{}
+			sectionState = PARSE_BODY
+			dataState = PARSE_HEADER
+
+			as.AddSubHeader(strings.TrimSpace(linestr[tag.Strlen():]), sec)
+		case TAG_HEADERINCL:
+			if sec != nil {
+				sec.subheaders = append(sec.subheaders, strings2.TrimSplit(linestr[tag.Strlen():], ",")...)
 			}
 
-		case strings.HasPrefix(linestr, TAG_RESP):
+		case TAG_RESP:
 			if sectionState != PARSE_INIT {
 				sectionState = PARSE_BODY
 				dataState = PARSE_STATUS
 				sec = &section{}
 				a.resps = append(a.resps, sec)
 			}
+		case TAG_SUBRESP:
+			name := strings.TrimSpace(linestr[tag.Strlen():])
+			sectionState = PARSE_BODY
+			dataState = PARSE_STATUS
+			sec = &section{}
+			as.AddSubResp(name, sec)
+		case TAG_RESPINCL:
+			if a != nil {
+				a.subresps = append(a.subresps, strings2.TrimSplit(linestr[tag.Strlen():], ",")...)
+			}
 
-		case strings.HasPrefix(linestr, TAG_ENDAPI):
-			sectionState = PARSE_INIT
+		case TAG_REQ:
+			if sectionState != PARSE_INIT {
+				sectionState = PARSE_BODY
+				sec = &section{}
+				a.req = sec
+				dataState = PARSE_STATUS
+			}
 
 		default:
 			if sectionState == PARSE_INIT {
@@ -274,7 +325,7 @@ func process(path string, wg *sync.WaitGroup) {
 				dataState = PARSE_HEADER
 
 			case PARSE_HEADER:
-				if !strings.HasPrefix(linestr, TAG_DATA) {
+				if !strings.HasPrefix(linestr, TAG_DATA.String()) {
 					sec.headers = append(sec.headers, linestr)
 
 					break
@@ -283,8 +334,8 @@ func process(path string, wg *sync.WaitGroup) {
 				fallthrough
 
 			case PARSE_DATA:
-				if strings.HasPrefix(linestr, TAG_DATA) {
-					sec.datas = append(sec.datas, strings.TrimSpace(linestr[len(TAG_DATA):]))
+				if strings.HasPrefix(linestr, TAG_DATA.String()) {
+					sec.datas = append(sec.datas, strings.TrimSpace(linestr[TAG_DATA.Strlen():]))
 				}
 			}
 		}
