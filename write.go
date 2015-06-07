@@ -52,7 +52,7 @@ func (as *APIs) writeSection(w io.Writer, apiname, secname string, writeSectionN
 			if sec := as.subheaders[h]; sec != nil {
 				writeBodyLines(w, sec.headers)
 			} else {
-				reportErrorln(`sub-header "%s" for api "%s" not found.`, apiname)
+				reportErrorln(`sub-header "%s" for api "%s" not found.`, h, apiname)
 			}
 		}
 
