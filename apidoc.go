@@ -9,12 +9,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/cosiner/gohper/tree"
-
 	"github.com/cosiner/gohper/errors"
 	"github.com/cosiner/gohper/os2/file"
 	"github.com/cosiner/gohper/strings2"
-	"github.com/cosiner/gohper/unsafe2"
+	"github.com/cosiner/gohper/tree"
 )
 
 type section struct {
@@ -228,17 +226,12 @@ func process(path string, wg *sync.WaitGroup) {
 	var category string = "global"
 
 	err := file.Filter(path, func(linum int, line []byte) ([]byte, error) {
-		line = bytes.TrimSpace(line)
-		if !strings.HasPrefix(unsafe2.String(line), comment) {
+		if !bytes.HasPrefix(line, comment) {
 			sectionState = PARSE_INIT
 			return nil, nil
 		}
 
 		line = bytes.TrimSpace(line[len(comment):])
-		index := bytes.Index(line, unsafe2.Bytes(comment))
-		if index > 0 {
-			line = bytes.TrimSpace(line[:index])
-		}
 		if len(line) == 0 {
 			return nil, nil
 		}
@@ -335,8 +328,9 @@ func process(path string, wg *sync.WaitGroup) {
 
 			case PARSE_DATA:
 				if strings.HasPrefix(linestr, TAG_DATA.String()) {
-					sec.datas = append(sec.datas, strings.TrimSpace(linestr[TAG_DATA.Strlen():]))
+					sec.datas = append(sec.datas, linestr[TAG_DATA.Strlen():])
 				}
+
 			}
 		}
 
