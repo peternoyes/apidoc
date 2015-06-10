@@ -13,6 +13,7 @@ import (
 	"github.com/cosiner/gohper/os2/file"
 	"github.com/cosiner/gohper/strings2"
 	"github.com/cosiner/gohper/tree"
+	"github.com/cosiner/gohper/unsafe2"
 )
 
 type section struct {
@@ -226,7 +227,7 @@ func process(path string, wg *sync.WaitGroup) {
 	var category string = "global"
 
 	err := file.Filter(path, func(linum int, line []byte) ([]byte, error) {
-		if !bytes.HasPrefix(line, comment) {
+		if !bytes.HasPrefix(line, unsafe2.Bytes(comment)) {
 			sectionState = PARSE_INIT
 			return nil, nil
 		}
