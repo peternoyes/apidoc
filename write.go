@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/cosiner/gohper/termcolor"
+	"github.com/cosiner/gohper/terminal/color"
 )
 
 func (a *API) WriteMarkdown(w io.Writer, index int, as *APIs, writeSectionName bool) {
@@ -81,7 +81,7 @@ func (as *APIs) WriteMarkDown(w io.Writer) {
 }
 
 func reportErrorln(format string, args ...interface{}) {
-	termcolor.LightRed.Fprintf(termcolor.Stderr, format+"\n", args...)
+	color.LightRed.Errorf(format+"\n", args...)
 }
 
 func printfln(w io.Writer, format string, args ...interface{}) {
