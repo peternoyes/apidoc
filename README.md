@@ -61,7 +61,10 @@ func CreateAuthToken() {}
 // @API create a new account
 // @Req
 //     POST /account
-//   -> {email(string), password(string)}
+//   ->{
+//        email(string), 
+//        password(string)
+//     }
 // @RespIncl UnAuth
 // @APIIncl generateToken
 func CreateAccount() {}
@@ -77,10 +80,14 @@ func GenerateToken() {}
 //     500 ServerError
 // @SubResp UnAuth
 //     401 Unauthorized
-//   ->{error:"invalid access token"}
+//   ->{
+//        error:"invalid access token"
+//     }
 // @SubResp TokenCreated
 //     201 Created
-//  -> {token(string)}
+//   ->{
+//        token(string)
+//     }
 ```
 
 # Example Output
