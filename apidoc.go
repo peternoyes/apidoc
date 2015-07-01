@@ -9,10 +9,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/cosiner/gohper/ds/tree"
 	"github.com/cosiner/gohper/errors"
 	"github.com/cosiner/gohper/os2/file"
 	"github.com/cosiner/gohper/strings2"
-	"github.com/cosiner/gohper/tree"
 	"github.com/cosiner/gohper/unsafe2"
 )
 
@@ -250,7 +250,7 @@ func process(path string, wg *sync.WaitGroup) {
 			a = &API{}
 			sectionState = PARSE_API
 			name := strings.TrimSpace(linestr[tag.Strlen():])
-			names := strings2.TrimSplit(name, TAG_AT_CATEGORY)
+			names := strings2.SplitAndTrim(name, TAG_AT_CATEGORY)
 			a.name = names[0]
 
 			if len(names) > 1 {
@@ -266,7 +266,7 @@ func process(path string, wg *sync.WaitGroup) {
 			as.AddSubAPI(a.name, a)
 		case TAG_APIINCL:
 			if a != nil {
-				a.subapis = append(a.subapis, strings2.TrimSplit(linestr[tag.Strlen():], ",")...)
+				a.subapis = append(a.subapis, strings2.SplitAndTrim(linestr[tag.Strlen():], ",")...)
 			}
 		case TAG_ENDAPI:
 			sectionState = PARSE_INIT
@@ -279,7 +279,7 @@ func process(path string, wg *sync.WaitGroup) {
 			as.AddSubHeader(strings.TrimSpace(linestr[tag.Strlen():]), sec)
 		case TAG_HEADERINCL:
 			if sec != nil {
-				sec.subheaders = append(sec.subheaders, strings2.TrimSplit(linestr[tag.Strlen():], ",")...)
+				sec.subheaders = append(sec.subheaders, strings2.SplitAndTrim(linestr[tag.Strlen():], ",")...)
 			}
 
 		case TAG_RESP:
@@ -297,7 +297,7 @@ func process(path string, wg *sync.WaitGroup) {
 			as.AddSubResp(name, sec)
 		case TAG_RESPINCL:
 			if a != nil {
-				a.subresps = append(a.subresps, strings2.TrimSplit(linestr[tag.Strlen():], ",")...)
+				a.subresps = append(a.subresps, strings2.SplitAndTrim(linestr[tag.Strlen():], ",")...)
 			}
 
 		case TAG_REQ:
