@@ -78,6 +78,8 @@ var comment string
 var ext string
 var outputType string
 var overwrite bool
+var order string
+var orderSep string
 
 func init() {
 	flag.Usage = func() {
@@ -86,6 +88,8 @@ func init() {
 	}
 	flag.StringVar(&fname, "f", "", "save result to file")
 	flag.BoolVar(&overwrite, "o", false, "overwrite exist file content")
+	flag.StringVar(&order, "order", "", "output order of category")
+	flag.StringVar(&orderSep, "orderSep", ",", "seperator of multiple cateogry")
 	flag.StringVar(&comment, "c", "//", "comment start")
 	flag.StringVar(&ext, "e", "go", "file extension name")
 	flag.StringVar(&outputType, "t", "md", "output format, currently only support markdown")
@@ -126,14 +130,18 @@ func main() {
 		errors.Err("Sorry, currently only support markdown format"),
 		errors.FatalAnyln)
 
+	orders := strings2.Filter(
+		strings2.IsNotEmpty,
+		strings2.SplitAndTrim(order, orderSep)...,
+	)
 	if fname != "" {
 		errors.Fatalln(file.OpenOrCreate(fname, overwrite, func(fd *os.File) error {
-			as.WriteMarkDown(fd)
+			as.WriteMarkDown(fd, orders)
 
 			return nil
 		}))
 	} else {
-		as.WriteMarkDown(os.Stdout)
+		as.WriteMarkDown(os.Stdout, orders)
 	}
 }
 

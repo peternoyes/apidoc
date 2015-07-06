@@ -67,16 +67,28 @@ func writeBodyLines(w io.Writer, headers []string) {
 	}
 }
 
-func (as *APIs) WriteMarkDown(w io.Writer) {
-	index := 1
-	for category, apis := range as.categories {
-		printfln(w, "#### %d. %s", index, category)
-		index++
-
-		for i, a := range apis {
-			a.WriteMarkdown(w, i, as, true)
-			fmt.Fprintln(w)
+func (as *APIs) WriteMarkDown(w io.Writer, orders []string) {
+	index := 0
+	for _, category := range orders {
+		if apis := as.categories[category]; apis != nil {
+			delete(as.categories, category)
+			index++
+			as.writeCategory(w, index, category, apis)
 		}
+	}
+
+	for category, apis := range as.categories {
+		index++
+		as.writeCategory(w, index, category, apis)
+	}
+}
+
+func (as *APIs) writeCategory(w io.Writer, index int, category string, apis []*API) {
+	printfln(w, "#### %d. %s", index, category)
+
+	for i, a := range apis {
+		a.WriteMarkdown(w, i, as, true)
+		fmt.Fprintln(w)
 	}
 }
 
