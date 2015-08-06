@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/cosiner/gohper/slices"
+
 	"github.com/cosiner/gohper/ds/tree"
 	"github.com/cosiner/gohper/errors"
 	"github.com/cosiner/gohper/os2/file"
@@ -80,6 +82,10 @@ var outputType string
 var overwrite bool
 var order string
 var orderSep string
+var tabsize int
+
+var tabreplace = []byte("    ")
+var tab = []byte("\t")
 
 func init() {
 	flag.Usage = func() {
@@ -93,7 +99,14 @@ func init() {
 	flag.StringVar(&comment, "c", "//", "comment start")
 	flag.StringVar(&ext, "e", "go", "file extension name")
 	flag.StringVar(&outputType, "t", "md", "output format, currently only support markdown")
+	flag.IntVar(&tabsize, "tab", 4, "tab size, tab will replaced with n space, if 0, don't replace")
 	flag.Parse()
+
+	if tabsize == 0 {
+		tabreplace = tab
+	} else {
+		tabreplace = slices.RepeatBytes(' ', tabsize)
+	}
 }
 
 func main() {
@@ -237,6 +250,7 @@ func process(path string, wg *sync.WaitGroup) {
 	dataStart := 0
 
 	err := file.Filter(path, func(linum int, line []byte) ([]byte, error) {
+		line = bytes.Replace(line, tab, tabreplace, -1)
 		originLine := string(line)
 
 		if !bytes.HasPrefix(line, unsafe2.Bytes(comment)) {
@@ -245,6 +259,7 @@ func process(path string, wg *sync.WaitGroup) {
 		}
 
 		line = bytes.TrimSpace(line[len(comment):])
+		line = bytes.Replace(line, []byte{'\t'}, []byte("    "), -1)
 		if len(line) == 0 {
 			return nil, nil
 		}
@@ -342,7 +357,11 @@ func process(path string, wg *sync.WaitGroup) {
 				fallthrough
 
 			case PARSE_DATA:
-				sec.datas = append(sec.datas, originLine[dataStart:])
+				if len(originLine) >= dataStart {
+					sec.datas = append(sec.datas, originLine[dataStart:])
+				} else {
+					reportErrorln("skipped data line: %s:%d:%s", path, linum, originLine)
+				}
 			}
 		}
 
