@@ -9,11 +9,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/cosiner/gohper/slices"
-
 	"github.com/cosiner/gohper/ds/tree"
 	"github.com/cosiner/gohper/errors"
 	"github.com/cosiner/gohper/os2/file"
+	"github.com/cosiner/gohper/slices"
 	"github.com/cosiner/gohper/strings2"
 	"github.com/cosiner/gohper/unsafe2"
 )
@@ -105,7 +104,7 @@ func init() {
 	if tabsize == 0 {
 		tabreplace = tab
 	} else {
-		tabreplace = slices.RepeatBytes(' ', tabsize)
+		tabreplace = bytes.Repeat([]byte(" "), tabsize)
 	}
 }
 
@@ -143,10 +142,7 @@ func main() {
 		errors.Err("Sorry, currently only support markdown format"),
 		errors.FatalAnyln)
 
-	orders := strings2.Filter(
-		strings2.IsNotEmpty,
-		strings2.SplitAndTrim(order, orderSep)...,
-	)
+	orders := slices.Strings(strings2.SplitAndTrim(order, orderSep)).Clear("")
 	if fname != "" {
 		errors.Fatalln(file.OpenOrCreate(fname, overwrite, func(fd *os.File) error {
 			as.WriteMarkDown(fd, orders)

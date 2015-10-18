@@ -93,7 +93,7 @@ func (as *APIs) writeCategory(w io.Writer, index int, category string, apis []*A
 }
 
 func reportErrorln(format string, args ...interface{}) {
-	color.LightRed.Errorf(format+"\n", args...)
+	color.Red.Errorf(format+"\n", args...)
 }
 
 func printfln(w io.Writer, format string, args ...interface{}) {
