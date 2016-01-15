@@ -245,19 +245,19 @@ func process(path string, wg *sync.WaitGroup) {
 
 	dataStart := 0
 
-	err := file.Filter(path, func(linum int, line []byte) ([]byte, error) {
+	err := file.Filter(path, func(linum int, line []byte) error {
 		line = bytes.Replace(line, tab, tabreplace, -1)
 		originLine := string(line)
 
 		if !bytes.HasPrefix(line, unsafe2.Bytes(comment)) {
 			sectionState = PARSE_INIT
-			return nil, nil
+			return nil
 		}
 
 		line = bytes.TrimSpace(line[len(comment):])
 		line = bytes.Replace(line, []byte{'\t'}, []byte("    "), -1)
 		if len(line) == 0 {
-			return nil, nil
+			return nil
 		}
 
 		linestr := string(line)
@@ -361,7 +361,7 @@ func process(path string, wg *sync.WaitGroup) {
 			}
 		}
 
-		return nil, nil
+		return nil
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
